@@ -5,6 +5,8 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
 from webdriver_manager.chrome import ChromeDriverManager
+from webdriver_manager.core.utils import ChromeType
+import subprocess
 from bs4 import BeautifulSoup
 import json
 import time
@@ -59,7 +61,25 @@ class FacebookSeleniumScraper:
             # Habilitar logging de performance para capturar requests de red
             chrome_options.set_capability('goog:loggingPrefs', {'performance': 'ALL'})
 
-            service = Service(ChromeDriverManager().install())
+            # Detect Chrome/Chromium binary and try to download matching chromedriver
+            chrome_bin = os.environ.get('CHROME_BIN', '/usr/bin/chromium')
+            chrome_version = None
+            try:
+                out = subprocess.check_output([chrome_bin, '--version'], stderr=subprocess.STDOUT, text=True)
+                chrome_version = out.strip()
+                logger.info(f"Detected browser version: {chrome_version}")
+            except Exception:
+                logger.debug("Could not detect chrome binary version via subprocess")
+
+            # Use webdriver-manager specifying Chromium type to better match binary
+            try:
+                driver_path = ChromeDriverManager(chrome_type=ChromeType.CHROMIUM).install()
+                logger.info(f"Using chromedriver at: {driver_path}")
+            except Exception as e:
+                logger.warning(f"webdriver-manager failed to install chromedriver with Chromium type: {e}; falling back to default manager")
+                driver_path = ChromeDriverManager().install()
+
+            service = Service(driver_path)
             self.driver = webdriver.Chrome(service=service, options=chrome_options)
             
             # Ocultar webdriver
