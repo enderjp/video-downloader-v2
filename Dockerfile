@@ -3,24 +3,12 @@ FROM selenium/standalone-chrome:latest
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 
-# Instalar dependencias del sistema necesarias para Chromium
+# Install minimal system deps (selenium image already contains Chrome and chromedriver)
 RUN apt-get update \
-     && apt-get install -y --no-install-recommends \
-         wget \
-         ca-certificates \
-         chromium \
-         fonts-liberation \
-         libnss3 \
-         libxss1 \
-         libasound2 \
-         libatk1.0-0 \
-         libatk-bridge2.0-0 \
-         libx11-xcb1 \
-         libxrandr2 \
-         libgtk-3-0 \
-    && apt-get install -y --no-install-recommends \
-        chromium-driver \
-    && rm -rf /var/lib/apt/lists/*
+  && apt-get install -y --no-install-recommends \
+    wget \
+    ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
 
 # Ensure chromedriver is available on PATH at a standard location
 RUN if [ -f /usr/bin/chromedriver ]; then \
