@@ -139,7 +139,14 @@ class FacebookSeleniumScraper:
                 logger.warning(f"webdriver-manager failed to install chromedriver with Chromium hint: {e}; falling back to default manager")
                 driver_path = ChromeDriverManager().install()
 
+            try:
+                if not driver_path or not os.path.exists(driver_path):
+                    logger.warning("chromedriver path missing; downloading default via webdriver-manager")
+                    driver_path = ChromeDriverManager().install()
                 service = Service(driver_path)
+            except Exception as service_err:
+                logger.error(f"Failed to initialize chromedriver service: {service_err}")
+                raise
 
             # If SELENIUM_REMOTE_URL is provided, connect to a remote Selenium server
             remote_url = os.environ.get('SELENIUM_REMOTE_URL')
