@@ -18,33 +18,18 @@ RUN apt-get update \
          libx11-xcb1 \
          libxrandr2 \
          libgtk-3-0 \
-     && rm -rf /var/lib/apt/lists/*
+    && apt-get install -y --no-install-recommends \
+        chromium-driver \
+    && rm -rf /var/lib/apt/lists/*
 
-# Install a chromedriver that matches the installed Chromium at build time.
-# This avoids runtime mismatches where the system chromedriver is an older version.
-RUN python - <<'PY'
-import subprocess, re, sys
-from webdriver_manager.chrome import ChromeDriverManager
-try:
-    out = subprocess.check_output(['/usr/bin/chromium', '--version'], text=True)
-    m = re.search(r'(\d+)\.', out)
-    major = m.group(1) if m else None
-except Exception:
-    major = None
-
-if major:
-    try:
-        # Attempt to install a chromedriver matching the major version
-        path = ChromeDriverManager(version=major).install()
-    except Exception:
-        path = ChromeDriverManager().install()
-else:
-    path = ChromeDriverManager().install()
-
-print('CHROMEDRIVER_INSTALLED_AT_BUILD:' + str(path))
-PY
-
-RUN ln -sf $(python -c "from webdriver_manager.chrome import ChromeDriverManager; print(ChromeDriverManager().install())") /usr/local/bin/chromedriver || true
+# Ensure chromedriver is available on PATH at a standard location
+RUN if [ -f /usr/bin/chromedriver ]; then \
+      ln -sf /usr/bin/chromedriver /usr/local/bin/chromedriver; \
+    elif [ -f /usr/lib/chromium/chromedriver ]; then \
+      ln -sf /usr/lib/chromium/chromedriver /usr/local/bin/chromedriver; \
+    elif [ -f /usr/lib/chromium-browser/chromedriver ]; then \
+      ln -sf /usr/lib/chromium-browser/chromedriver /usr/local/bin/chromedriver; \
+    fi || true
 
 WORKDIR /app
 
