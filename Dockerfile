@@ -1,4 +1,4 @@
-FROM python:3.11-slim
+FROM selenium/standalone-chrome:latest
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
@@ -45,8 +45,8 @@ COPY . /app
 # using webdriver-manager, then start the FastAPI server.
 # This avoids mismatches between system chromedriver and Chromium in the image.
 
-# Indicar ruta del binario de Chromium dentro del contenedor
-ENV CHROME_BIN=/usr/bin/chromium
+# Indicar ruta del binario de Chromium dentro del contenedor (selenium image usa /usr/bin/google-chrome)
+ENV CHROME_BIN=/usr/bin/google-chrome
 
 EXPOSE 8000
 
@@ -55,3 +55,6 @@ RUN chmod +x /app/start.sh || true
 
 # Render establece $PORT; usar fallback
 CMD ["sh", "-c", "/app/start.sh"]
+
+# Expose Selenium port for optional remote control (not strictly necessary)
+EXPOSE 4444

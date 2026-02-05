@@ -1,4 +1,5 @@
 from selenium import webdriver
+from selenium.webdriver import Remote
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
@@ -133,8 +134,19 @@ class FacebookSeleniumScraper:
                 logger.warning(f"webdriver-manager failed to install chromedriver with Chromium hint: {e}; falling back to default manager")
                 driver_path = ChromeDriverManager().install()
 
-            service = Service(driver_path)
-            self.driver = webdriver.Chrome(service=service, options=chrome_options)
+                service = Service(driver_path)
+
+            # If SELENIUM_REMOTE_URL is provided, connect to a remote Selenium server
+            remote_url = os.environ.get('SELENIUM_REMOTE_URL')
+            if remote_url:
+                try:
+                    logger.info(f"Connecting to remote Selenium at {remote_url}")
+                    self.driver = Remote(command_executor=remote_url, options=chrome_options)
+                except Exception as e:
+                    logger.warning(f"Remote WebDriver connection failed: {e}; falling back to local chromedriver")
+                    self.driver = webdriver.Chrome(service=service, options=chrome_options)
+            else:
+                self.driver = webdriver.Chrome(service=service, options=chrome_options)
             
             # Ocultar webdriver
             self.driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
