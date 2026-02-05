@@ -4,6 +4,9 @@ from pydantic import BaseModel, Field, validator
 import logging
 from scraper_selenium import get_scraper_instance, close_scraper_instance
 import atexit
+import os
+from threading import Lock
+from contextlib import contextmanager
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -38,6 +41,44 @@ class PageRequest(BaseModel):
     num_posts: int = Field(default=10, ge=1, le=20, description="Número de posts")
 
 
+class BusyError(Exception):
+    """Raised when the scraper is already processing the max allowed requests."""
+
+
+class RequestTracker:
+    def __init__(self, max_concurrent: int = 1):
+        self._lock = Lock()
+        self._active = 0
+        self.max_concurrent = max(1, max_concurrent)
+
+    @contextmanager
+    def track(self):
+        with self._lock:
+            if self._active >= self.max_concurrent:
+                raise BusyError
+            self._active += 1
+            current_active = self._active
+        try:
+            yield current_active
+        finally:
+            with self._lock:
+                self._active = max(0, self._active - 1)
+
+    def snapshot(self):
+        with self._lock:
+            active = self._active
+        return {
+            "active_requests": active,
+            "max_concurrent": self.max_concurrent,
+            "busy": active >= self.max_concurrent
+        }
+
+
+request_tracker = RequestTracker(
+    max_concurrent=int(os.getenv("SCRAPER_MAX_CONCURRENT", "1"))
+)
+
+
 # Cerrar scraper al apagar la aplicación
 @app.on_event("shutdown")
 def shutdown_event():
@@ -61,7 +102,8 @@ def root():
             "POST /scrape/page": "Scrapear múltiples posts de una página",
             "GET /scrape/video?url=...": "URL del video (GET)",
             "POST /scrape/video": "URL del video (POST)",
-            "GET /health": "Health check"
+            "GET /health": "Health check",
+            "GET /status": "Estado del scraper / ocupación"
         }
     }
 
@@ -71,12 +113,23 @@ def health():
     return {"status": "healthy", "version": "2.0.0", "scraper": "Selenium"}
 
 
+@app.get("/status")
+def status():
+    snapshot = request_tracker.snapshot()
+    snapshot.update({
+        "status": "online",
+        "version": "2.0.0"
+    })
+    return snapshot
+
+
 @app.post("/scrape")
 def scrape_post(request: PostURLRequest):
     try:
-        logger.info(f"📬 POST /scrape - URL: {request.url}")
-        scraper = get_scraper_instance(headless=True)
-        result = scraper.scrape_post_by_url(request.url)
+        with request_tracker.track():
+            logger.info(f"📬 POST /scrape - URL: {request.url}")
+            scraper = get_scraper_instance(headless=True)
+            result = scraper.scrape_post_by_url(request.url)
         
         if not result['success']:
             raise HTTPException(
@@ -86,6 +139,8 @@ def scrape_post(request: PostURLRequest):
         
         return result
         
+    except BusyError:
+        raise HTTPException(status_code=429, detail="El scraper está procesando otra solicitud, intenta nuevamente en unos segundos")
     except HTTPException:
         raise
     except Exception as e:
@@ -96,19 +151,22 @@ def scrape_post(request: PostURLRequest):
 @app.get("/scrape")
 def scrape_get(url: str = Query(..., description="URL del post de Facebook")):
     try:
-        logger.info(f"📬 GET /scrape - URL: {url}")
-        
-        if 'facebook.com' not in url.lower():
-            raise HTTPException(status_code=400, detail="Debe ser URL de Facebook")
-        
-        scraper = get_scraper_instance(headless=True)
-        result = scraper.scrape_post_by_url(url)
+        with request_tracker.track():
+            logger.info(f"📬 GET /scrape - URL: {url}")
+            
+            if 'facebook.com' not in url.lower():
+                raise HTTPException(status_code=400, detail="Debe ser URL de Facebook")
+            
+            scraper = get_scraper_instance(headless=True)
+            result = scraper.scrape_post_by_url(url)
         
         if not result['success']:
             raise HTTPException(status_code=404, detail=result.get('error'))
         
         return result
         
+    except BusyError:
+        raise HTTPException(status_code=429, detail="El scraper está ocupado, intenta nuevamente en unos segundos")
     except HTTPException:
         raise
     except Exception as e:
@@ -118,8 +176,9 @@ def scrape_get(url: str = Query(..., description="URL del post de Facebook")):
 @app.post("/scrape/images-only")
 def scrape_images_only(request: PostURLRequest):
     try:
-        scraper = get_scraper_instance(headless=True)
-        result = scraper.scrape_post_by_url(request.url)
+        with request_tracker.track():
+            scraper = get_scraper_instance(headless=True)
+            result = scraper.scrape_post_by_url(request.url)
         
         if not result['success']:
             raise HTTPException(status_code=404, detail=result.get('error'))
@@ -133,6 +192,8 @@ def scrape_images_only(request: PostURLRequest):
             'images': image_urls
         }
         
+    except BusyError:
+        raise HTTPException(status_code=429, detail="El scraper está ocupado, intenta más tarde")
     except HTTPException:
         raise
     except Exception as e:
@@ -142,15 +203,18 @@ def scrape_images_only(request: PostURLRequest):
 @app.post("/scrape/page")
 def scrape_page(request: PageRequest):
     try:
-        logger.info(f"📄 Scrapeando página: {request.page_url}")
-        scraper = get_scraper_instance(headless=True)
-        result = scraper.scrape_page_posts(request.page_url, request.num_posts)
+        with request_tracker.track():
+            logger.info(f"📄 Scrapeando página: {request.page_url}")
+            scraper = get_scraper_instance(headless=True)
+            result = scraper.scrape_page_posts(request.page_url, request.num_posts)
         
         if not result['success']:
             raise HTTPException(status_code=500, detail=result.get('error'))
         
         return result
         
+    except BusyError:
+        raise HTTPException(status_code=429, detail="El scraper está ocupado, intenta más tarde")
     except HTTPException:
         raise
     except Exception as e:
@@ -160,19 +224,22 @@ def scrape_page(request: PageRequest):
 @app.get("/scrape/video")
 def scrape_video_get(url: str = Query(..., description="URL del post de Facebook")):
     try:
-        logger.info(f"📬 GET /scrape/video - URL: {url}")
+        with request_tracker.track():
+            logger.info(f"📬 GET /scrape/video - URL: {url}")
 
-        if 'facebook.com' not in url.lower():
-            raise HTTPException(status_code=400, detail="Debe ser URL de Facebook")
+            if 'facebook.com' not in url.lower():
+                raise HTTPException(status_code=400, detail="Debe ser URL de Facebook")
 
-        scraper = get_scraper_instance(headless=True)
-        result = scraper.scrape_video_by_url(url)
+            scraper = get_scraper_instance(headless=True)
+            result = scraper.scrape_video_by_url(url)
 
         if not result.get('success'):
             raise HTTPException(status_code=404, detail=result.get('error'))
 
         return result
 
+    except BusyError:
+        raise HTTPException(status_code=429, detail="El scraper está ocupado, intenta nuevamente en unos segundos")
     except HTTPException:
         raise
     except Exception as e:
@@ -182,15 +249,18 @@ def scrape_video_get(url: str = Query(..., description="URL del post de Facebook
 @app.post("/scrape/video")
 def scrape_video_post(request: PostURLRequest):
     try:
-        logger.info(f"📬 POST /scrape/video - URL: {request.url}")
-        scraper = get_scraper_instance(headless=True)
-        result = scraper.scrape_video_by_url(request.url)
+        with request_tracker.track():
+            logger.info(f"📬 POST /scrape/video - URL: {request.url}")
+            scraper = get_scraper_instance(headless=True)
+            result = scraper.scrape_video_by_url(request.url)
 
         if not result.get('success'):
             raise HTTPException(status_code=404, detail=result.get('error', 'Video no encontrado'))
 
         return result
 
+    except BusyError:
+        raise HTTPException(status_code=429, detail="El scraper está ocupado, intenta nuevamente en unos segundos")
     except HTTPException:
         raise
     except Exception as e:
