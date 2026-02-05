@@ -79,16 +79,56 @@ class FacebookSeleniumScraper:
 
             # Use webdriver-manager specifying Chromium type to better match binary
             try:
-                if ChromeType is not None:
-                    driver_path = ChromeDriverManager(chrome_type=ChromeType.CHROMIUM).install()
-                else:
-                    # webdriver-manager older/newer versions might not expose ChromeType; try string hint
-                    try:
-                        driver_path = ChromeDriverManager(chrome_type='chromium').install()
-                    except Exception:
-                        driver_path = ChromeDriverManager().install()
+                driver_path = None
+                attempts = []
 
-                logger.info(f"Using chromedriver at: {driver_path}")
+                # Extract full and major versions if possible
+                full_ver = None
+                major_ver = None
+                try:
+                    if chrome_version:
+                        m_full = re.search(r'(\d+\.\d+\.\d+\.\d+)', chrome_version)
+                        if m_full:
+                            full_ver = m_full.group(1)
+                        m_maj = re.search(r'(\d+)', chrome_version)
+                        if m_maj:
+                            major_ver = m_maj.group(1)
+                except Exception:
+                    pass
+
+                # Try matching driver by full version, then major version, with Chromium hint
+                if ChromeType is not None:
+                    if full_ver:
+                        attempts.append(f"chrome_type=ChromeType.CHROMIUM, version={full_ver}")
+                        try:
+                            driver_path = ChromeDriverManager(chrome_type=ChromeType.CHROMIUM, version=full_ver).install()
+                        except Exception:
+                            driver_path = None
+                    if not driver_path and major_ver:
+                        attempts.append(f"chrome_type=ChromeType.CHROMIUM, version_prefix={major_ver}")
+                        try:
+                            driver_path = ChromeDriverManager(chrome_type=ChromeType.CHROMIUM, version=major_ver).install()
+                        except Exception:
+                            driver_path = None
+
+                # Try with string hint for chromium
+                if not driver_path:
+                    try:
+                        if full_ver:
+                            attempts.append(f"chrome_type='chromium', version={full_ver}")
+                            driver_path = ChromeDriverManager(chrome_type='chromium', version=full_ver).install()
+                        if not driver_path and major_ver:
+                            attempts.append(f"chrome_type='chromium', version_prefix={major_ver}")
+                            driver_path = ChromeDriverManager(chrome_type='chromium', version=major_ver).install()
+                    except Exception:
+                        driver_path = None
+
+                # Final fallback: default manager
+                if not driver_path:
+                    attempts.append('default')
+                    driver_path = ChromeDriverManager().install()
+
+                logger.info(f"Using chromedriver at: {driver_path} (attempts: {attempts})")
             except Exception as e:
                 logger.warning(f"webdriver-manager failed to install chromedriver with Chromium hint: {e}; falling back to default manager")
                 driver_path = ChromeDriverManager().install()
