@@ -13,7 +13,6 @@ RUN apt-get update \
     ca-certificates \
     python3 \
     python3-venv \
-    python3-distutils \
     python3-pip \
   && rm -rf /var/lib/apt/lists/*
 
