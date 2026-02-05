@@ -79,6 +79,7 @@ class FacebookSeleniumScraper:
                 logger.debug("Could not detect chrome binary version via subprocess")
 
             # Use webdriver-manager specifying Chromium type to better match binary
+            driver_override = os.environ.get('CHROMEDRIVER_PATH')
             try:
                 driver_path = None
                 attempts = []
@@ -123,6 +124,10 @@ class FacebookSeleniumScraper:
                             driver_path = ChromeDriverManager(chrome_type='chromium', version=major_ver).install()
                     except Exception:
                         driver_path = None
+
+                if driver_override and os.path.exists(driver_override):
+                    driver_path = driver_override
+                    attempts.insert(0, 'env.CHROMEDRIVER_PATH')
 
                 # Final fallback: default manager
                 if not driver_path:
