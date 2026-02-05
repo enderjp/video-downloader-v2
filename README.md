@@ -42,3 +42,5 @@ Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8001/scrape" -ContentType 
 ---
 
 Si quieres, puedo crear también un `Dockerfile` y un `.github/workflows` para CI.
+
+<!-- force-push-marker: 2026-02-05 - small edit to trigger a new commit -->
