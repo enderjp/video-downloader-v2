@@ -3,12 +3,22 @@ FROM selenium/standalone-chrome:latest
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 
-# Install minimal system deps (selenium image already contains Chrome and chromedriver)
+# Switch to root for package installation
+USER root
+
+# Install minimal system deps and Python (selenium base image doesn't include Python)
 RUN apt-get update \
   && apt-get install -y --no-install-recommends \
     wget \
     ca-certificates \
+    python3 \
+    python3-venv \
+    python3-distutils \
+    python3-pip \
   && rm -rf /var/lib/apt/lists/*
+
+# Make `python` and `pip` point to python3/pip3
+RUN ln -sf /usr/bin/python3 /usr/bin/python || true && ln -sf /usr/bin/pip3 /usr/bin/pip || true
 
 # Ensure chromedriver is available on PATH at a standard location
 RUN if [ -f /usr/bin/chromedriver ]; then \
@@ -29,6 +39,9 @@ RUN python -m pip install --upgrade pip setuptools wheel \
 # Copiar código de la app
 COPY . /app
 
+# Ensure files in /app are accessible to the selenium non-root user
+RUN chown -R seluser:seluser /app || true
+
 # A script that will download a compatible chromedriver at container start
 # using webdriver-manager, then start the FastAPI server.
 # This avoids mismatches between system chromedriver and Chromium in the image.
@@ -40,6 +53,9 @@ EXPOSE 8000
 
 # Ensure the start script is executable and use it as entrypoint
 RUN chmod +x /app/start.sh || true
+
+# Switch back to the default non-root selenium user
+USER seluser
 
 # Render establece $PORT; usar fallback
 CMD ["sh", "-c", "/app/start.sh"]
