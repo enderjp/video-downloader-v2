@@ -24,11 +24,11 @@ RUN apt-get update \
 WORKDIR /app
 
 # Copiar e instalar dependencias primero (cacheable)
-COPY video-downloader-v2/requirements.txt /app/requirements.txt
+COPY requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt
 
 # Copiar código de la app
-COPY video-downloader-v2/ /app
+COPY . /app
 
 # Indicar ruta del binario de Chromium dentro del contenedor
 ENV CHROME_BIN=/usr/bin/chromium
