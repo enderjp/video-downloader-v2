@@ -5,7 +5,13 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
 from webdriver_manager.chrome import ChromeDriverManager
-from webdriver_manager.core.utils import ChromeType
+try:
+    from webdriver_manager.core.utils import ChromeType
+except Exception:
+    try:
+        from webdriver_manager.utils import ChromeType
+    except Exception:
+        ChromeType = None
 import subprocess
 from bs4 import BeautifulSoup
 import json
@@ -73,10 +79,18 @@ class FacebookSeleniumScraper:
 
             # Use webdriver-manager specifying Chromium type to better match binary
             try:
-                driver_path = ChromeDriverManager(chrome_type=ChromeType.CHROMIUM).install()
+                if ChromeType is not None:
+                    driver_path = ChromeDriverManager(chrome_type=ChromeType.CHROMIUM).install()
+                else:
+                    # webdriver-manager older/newer versions might not expose ChromeType; try string hint
+                    try:
+                        driver_path = ChromeDriverManager(chrome_type='chromium').install()
+                    except Exception:
+                        driver_path = ChromeDriverManager().install()
+
                 logger.info(f"Using chromedriver at: {driver_path}")
             except Exception as e:
-                logger.warning(f"webdriver-manager failed to install chromedriver with Chromium type: {e}; falling back to default manager")
+                logger.warning(f"webdriver-manager failed to install chromedriver with Chromium hint: {e}; falling back to default manager")
                 driver_path = ChromeDriverManager().install()
 
             service = Service(driver_path)
