@@ -34,6 +34,7 @@ class FacebookSeleniumScraper:
     def __init__(self, headless: bool = True):
         self.headless = headless
         self.driver = None
+        self.block_images = os.environ.get('SCRAPER_BLOCK_IMAGES', 'false').lower() == 'true'
         
     def setup_driver(self):
         """Configura el driver de Chrome"""
@@ -51,9 +52,10 @@ class FacebookSeleniumScraper:
         chrome_options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
         
         # Deshabilitar notificaciones
+        image_policy = 2 if self.block_images else 1
         prefs = {
             "profile.default_content_setting_values.notifications": 2,
-            "profile.managed_default_content_settings.images": 2  # Deshabilitar imágenes para más velocidad (opcional)
+            "profile.managed_default_content_settings.images": image_policy
         }
         chrome_options.add_experimental_option("prefs", prefs)
         chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
