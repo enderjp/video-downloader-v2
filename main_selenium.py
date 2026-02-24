@@ -7,6 +7,7 @@ import atexit
 import os
 from threading import Lock
 from contextlib import contextmanager
+from typing import Optional
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -78,6 +79,20 @@ request_tracker = RequestTracker(
     max_concurrent=int(os.getenv("SCRAPER_MAX_CONCURRENT", "1"))
 )
 
+DEFAULT_BLOCK_IMAGES = os.getenv("SCRAPER_BLOCK_IMAGES", "true").lower() == "true"
+
+
+def should_block_images(url: Optional[str]) -> bool:
+    """Permite desbloquear imágenes en URLs donde son necesarias (p. ej. /share/)."""
+    if not url:
+        return DEFAULT_BLOCK_IMAGES
+
+    lowered = url.lower()
+    if "/share/" in lowered or "/sharer/" in lowered:
+        return False
+
+    return DEFAULT_BLOCK_IMAGES
+
 
 # Cerrar scraper al apagar la aplicación
 @app.on_event("shutdown")
@@ -128,7 +143,7 @@ def scrape_post(request: PostURLRequest):
     try:
         with request_tracker.track():
             logger.info(f"📬 POST /scrape - URL: {request.url}")
-            scraper = get_scraper_instance(headless=True, block_images=True)
+            scraper = get_scraper_instance(headless=True, block_images=should_block_images(request.url))
             result = scraper.scrape_post_by_url(request.url)
         
         if not result['success']:
@@ -157,7 +172,7 @@ def scrape_get(url: str = Query(..., description="URL del post de Facebook")):
             if 'facebook.com' not in url.lower():
                 raise HTTPException(status_code=400, detail="Debe ser URL de Facebook")
             
-            scraper = get_scraper_instance(headless=True, block_images=True)
+            scraper = get_scraper_instance(headless=True, block_images=should_block_images(url))
             result = scraper.scrape_post_by_url(url)
         
         if not result['success']:
@@ -205,7 +220,7 @@ def scrape_page(request: PageRequest):
     try:
         with request_tracker.track():
             logger.info(f"📄 Scrapeando página: {request.page_url}")
-            scraper = get_scraper_instance(headless=True, block_images=True)
+            scraper = get_scraper_instance(headless=True, block_images=DEFAULT_BLOCK_IMAGES)
             result = scraper.scrape_page_posts(request.page_url, request.num_posts)
         
         if not result['success']:
@@ -230,7 +245,7 @@ def scrape_video_get(url: str = Query(..., description="URL del post de Facebook
             if 'facebook.com' not in url.lower():
                 raise HTTPException(status_code=400, detail="Debe ser URL de Facebook")
 
-            scraper = get_scraper_instance(headless=True, block_images=True)
+            scraper = get_scraper_instance(headless=True, block_images=should_block_images(url))
             result = scraper.scrape_video_by_url(url)
 
         if not result.get('success'):
@@ -251,7 +266,7 @@ def scrape_video_post(request: PostURLRequest):
     try:
         with request_tracker.track():
             logger.info(f"📬 POST /scrape/video - URL: {request.url}")
-            scraper = get_scraper_instance(headless=True, block_images=True)
+            scraper = get_scraper_instance(headless=True, block_images=should_block_images(request.url))
             result = scraper.scrape_video_by_url(request.url)
 
         if not result.get('success'):

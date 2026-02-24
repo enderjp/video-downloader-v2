@@ -28,6 +28,23 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
+def _is_candidate_image_src(src: Optional[str]) -> bool:
+    """Filtra el tipo de recursos que solemos querer devolver al cliente."""
+    if not src:
+        return False
+
+    lowered = src.lower()
+    allowed_snippets = ('scontent', 'fbcdn', 'lookaside', 'media.')
+    if not any(snippet in lowered for snippet in allowed_snippets):
+        return False
+
+    blocked_snippets = ('emoji', 'static', 'safe_image', 'rsrc.php', 'gif&', 'profilepicture')
+    if any(snippet in lowered for snippet in blocked_snippets):
+        return False
+
+    return True
+
+
 def _default_block_images() -> bool:
     return os.environ.get('SCRAPER_BLOCK_IMAGES', 'false').lower() == 'true'
 
@@ -280,17 +297,35 @@ class FacebookSeleniumScraper:
             
             for img in img_tags:
                 src = img.get('src')
-                if src and 'scontent' in src:
-                    # Filtrar iconos y emojis
-                    if not any(x in src for x in ['emoji', 'static', 'safe_image', 'rsrc.php']):
-                        if src not in images:
-                            images.append(src)
+                if _is_candidate_image_src(src) and src not in images:
+                    images.append(src)
             
             # También buscar en atributos data-src
             for img in soup.find_all('img', attrs={'data-src': True}):
                 src = img.get('data-src')
-                if src and 'scontent' in src and src not in images:
+                if _is_candidate_image_src(src) and src not in images:
                     images.append(src)
+
+            # Fallback: og:image / link rel="image_src" para rutas /share
+            if not images:
+                og_candidates = []
+                meta_props = ['og:image', 'og:image:url', 'og:image:secure_url', 'twitter:image']
+                for prop in meta_props:
+                    meta = soup.find('meta', property=prop) or soup.find('meta', attrs={'name': prop})
+                    if meta and meta.get('content'):
+                        content = meta.get('content')
+                        if content not in og_candidates:
+                            og_candidates.append(content)
+
+                link_tag = soup.find('link', rel=lambda v: v and 'image_src' in v.lower())
+                if link_tag and link_tag.get('href'):
+                    href = link_tag.get('href')
+                    if href not in og_candidates:
+                        og_candidates.append(href)
+
+                for candidate in og_candidates:
+                    if candidate not in images:
+                        images.append(candidate)
             
             # Extraer texto del post
             post_text = ""
