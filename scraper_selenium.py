@@ -20,7 +20,7 @@ import time
 import logging
 import requests
 import os
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 import re
 from urllib.parse import urlparse, urlunparse, parse_qsl, urlencode
 
@@ -28,13 +28,21 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
+def _default_block_images() -> bool:
+    return os.environ.get('SCRAPER_BLOCK_IMAGES', 'false').lower() == 'true'
+
+
+def _resolve_block_images_flag(flag: Optional[bool]) -> bool:
+    return flag if flag is not None else _default_block_images()
+
+
 class FacebookSeleniumScraper:
     """Scraper de Facebook usando Selenium - SIN LOGIN requerido"""
     
-    def __init__(self, headless: bool = True):
+    def __init__(self, headless: bool = True, block_images: Optional[bool] = None):
         self.headless = headless
         self.driver = None
-        self.block_images = os.environ.get('SCRAPER_BLOCK_IMAGES', 'false').lower() == 'true'
+        self.block_images = _resolve_block_images_flag(block_images)
         
     def setup_driver(self):
         """Configura el driver de Chrome"""
@@ -758,19 +766,25 @@ class FacebookSeleniumScraper:
             logger.info("🔒 Navegador cerrado")
 
 
-# Singleton para reutilizar el scraper
-_scraper_instance = None
+# Singleton para reutilizar el scraper (separado por configuración)
+_scraper_instances: Dict[Tuple[bool, bool], FacebookSeleniumScraper] = {}
 
-def get_scraper_instance(headless: bool = True) -> FacebookSeleniumScraper:
+
+def get_scraper_instance(headless: bool = True, block_images: Optional[bool] = None) -> FacebookSeleniumScraper:
     """Obtiene o crea una instancia del scraper"""
-    global _scraper_instance
-    if _scraper_instance is None:
-        _scraper_instance = FacebookSeleniumScraper(headless=headless)
-    return _scraper_instance
+    global _scraper_instances
+    resolved_block = _resolve_block_images_flag(block_images)
+    key = (headless, resolved_block)
+    scraper = _scraper_instances.get(key)
+    if scraper is None:
+        scraper = FacebookSeleniumScraper(headless=headless, block_images=resolved_block)
+        _scraper_instances[key] = scraper
+    return scraper
+
 
 def close_scraper_instance():
-    """Cierra la instancia del scraper"""
-    global _scraper_instance
-    if _scraper_instance:
-        _scraper_instance.close()
-        _scraper_instance = None
+    """Cierra todas las instancias del scraper"""
+    global _scraper_instances
+    for scraper in _scraper_instances.values():
+        scraper.close()
+    _scraper_instances = {}

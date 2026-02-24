@@ -128,7 +128,7 @@ def scrape_post(request: PostURLRequest):
     try:
         with request_tracker.track():
             logger.info(f"📬 POST /scrape - URL: {request.url}")
-            scraper = get_scraper_instance(headless=True)
+            scraper = get_scraper_instance(headless=True, block_images=True)
             result = scraper.scrape_post_by_url(request.url)
         
         if not result['success']:
@@ -157,7 +157,7 @@ def scrape_get(url: str = Query(..., description="URL del post de Facebook")):
             if 'facebook.com' not in url.lower():
                 raise HTTPException(status_code=400, detail="Debe ser URL de Facebook")
             
-            scraper = get_scraper_instance(headless=True)
+            scraper = get_scraper_instance(headless=True, block_images=True)
             result = scraper.scrape_post_by_url(url)
         
         if not result['success']:
@@ -177,7 +177,7 @@ def scrape_get(url: str = Query(..., description="URL del post de Facebook")):
 def scrape_images_only(request: PostURLRequest):
     try:
         with request_tracker.track():
-            scraper = get_scraper_instance(headless=True)
+            scraper = get_scraper_instance(headless=True, block_images=False)
             result = scraper.scrape_post_by_url(request.url)
         
         if not result['success']:
@@ -205,7 +205,7 @@ def scrape_page(request: PageRequest):
     try:
         with request_tracker.track():
             logger.info(f"📄 Scrapeando página: {request.page_url}")
-            scraper = get_scraper_instance(headless=True)
+            scraper = get_scraper_instance(headless=True, block_images=True)
             result = scraper.scrape_page_posts(request.page_url, request.num_posts)
         
         if not result['success']:
@@ -230,7 +230,7 @@ def scrape_video_get(url: str = Query(..., description="URL del post de Facebook
             if 'facebook.com' not in url.lower():
                 raise HTTPException(status_code=400, detail="Debe ser URL de Facebook")
 
-            scraper = get_scraper_instance(headless=True)
+            scraper = get_scraper_instance(headless=True, block_images=True)
             result = scraper.scrape_video_by_url(url)
 
         if not result.get('success'):
@@ -251,7 +251,7 @@ def scrape_video_post(request: PostURLRequest):
     try:
         with request_tracker.track():
             logger.info(f"📬 POST /scrape/video - URL: {request.url}")
-            scraper = get_scraper_instance(headless=True)
+            scraper = get_scraper_instance(headless=True, block_images=True)
             result = scraper.scrape_video_by_url(request.url)
 
         if not result.get('success'):
