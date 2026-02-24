@@ -38,11 +38,35 @@ def _is_candidate_image_src(src: Optional[str]) -> bool:
     if not any(snippet in lowered for snippet in allowed_snippets):
         return False
 
-    blocked_snippets = ('emoji', 'static', 'safe_image', 'rsrc.php', 'gif&', 'profilepicture')
+    blocked_snippets = (
+        'emoji',
+        'static',
+        'safe_image',
+        'rsrc.php',
+        'gif&',
+        'profilepicture'
+    )
     if any(snippet in lowered for snippet in blocked_snippets):
         return False
 
     return True
+
+
+def _extract_meta_image_candidates(soup: BeautifulSoup) -> List[str]:
+    candidates = []
+    meta_props = ['og:image', 'og:image:url', 'og:image:secure_url', 'twitter:image']
+    for prop in meta_props:
+        meta = soup.find('meta', property=prop) or soup.find('meta', attrs={'name': prop})
+        if meta:
+            content = meta.get('content')
+            if content and content not in candidates:
+                candidates.append(content)
+
+    link_tag = soup.find('link', rel=lambda v: v and 'image_src' in v.lower())
+    if link_tag and link_tag.get('href') and link_tag['href'] not in candidates:
+        candidates.append(link_tag['href'])
+
+    return candidates
 
 
 def _default_block_images() -> bool:
@@ -262,6 +286,47 @@ class FacebookSeleniumScraper:
             return urlunparse(parsed._replace(query=new_query))
         except Exception:
             return url
+
+    def _fetch_share_preview_images(self, original_url: str, mobile_url: str) -> List[str]:
+        """Descarga la versión share con user-agent de crawler para extraer og:image."""
+        targets = []
+        for candidate in [original_url, mobile_url]:
+            if candidate and candidate not in targets:
+                targets.append(candidate)
+            if candidate:
+                # Intentar forzar subdominios comunes
+                parsed = urlparse(candidate)
+                if parsed.netloc.startswith('www.'):
+                    alt = candidate.replace('://www.', '://m.', 1)
+                    if alt not in targets:
+                        targets.append(alt)
+                if '://m.' in candidate and not parsed.netloc.startswith('mbasic.'):
+                    alt = candidate.replace('://m.', '://mbasic.', 1)
+                    if alt not in targets:
+                        targets.append(alt)
+
+        headers_variants = [
+            {"User-Agent": "facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)"},
+            {"User-Agent": "Mozilla/5.0 (Linux; Android 10; Pixel 5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"}
+        ]
+
+        discovered: List[str] = []
+        for target in targets:
+            for hdrs in headers_variants:
+                try:
+                    resp = requests.get(target, headers=hdrs, timeout=8, allow_redirects=True)
+                    if resp.status_code != 200 or not resp.text:
+                        continue
+                    soup = BeautifulSoup(resp.text, 'html.parser')
+                    for img in _extract_meta_image_candidates(soup):
+                        if (_is_candidate_image_src(img) or img.startswith('http')) and img not in discovered:
+                            discovered.append(img)
+                    if discovered:
+                        return discovered
+                except Exception as exc:
+                    logger.debug(f"Share preview fallback failed for {target}: {exc}")
+                    continue
+        return discovered
     
     def scrape_post_by_url(self, post_url: str) -> Dict:
         """
@@ -308,22 +373,14 @@ class FacebookSeleniumScraper:
 
             # Fallback: og:image / link rel="image_src" para rutas /share
             if not images:
-                og_candidates = []
-                meta_props = ['og:image', 'og:image:url', 'og:image:secure_url', 'twitter:image']
-                for prop in meta_props:
-                    meta = soup.find('meta', property=prop) or soup.find('meta', attrs={'name': prop})
-                    if meta and meta.get('content'):
-                        content = meta.get('content')
-                        if content not in og_candidates:
-                            og_candidates.append(content)
+                for candidate in _extract_meta_image_candidates(soup):
+                    if candidate not in images:
+                        images.append(candidate)
 
-                link_tag = soup.find('link', rel=lambda v: v and 'image_src' in v.lower())
-                if link_tag and link_tag.get('href'):
-                    href = link_tag.get('href')
-                    if href not in og_candidates:
-                        og_candidates.append(href)
-
-                for candidate in og_candidates:
+            # Último recurso: descargar la página /share como lo haría facebookexternalhit
+            if not images and '/share/' in post_url.lower():
+                share_images = self._fetch_share_preview_images(post_url, mobile_url)
+                for candidate in share_images:
                     if candidate not in images:
                         images.append(candidate)
             
